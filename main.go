@@ -218,27 +218,19 @@ func checkMetadataHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		glog.V(10).Infof("Got Request: %v", r)
+
 		w.Header().Add("Server", "Metadata Server for VM")
 		w.Header().Add("Metadata-Flavor", "Google")
 		w.Header().Add("X-XSS-Protection", "0")
 		w.Header().Add("X-Frame-Options", "0")
 
-		hasHostHeader := false
-		for _, a := range hostHeaders {
-			if a == r.Host {
-				hasHostHeader = true
-			}
-		}
 
-		if !hasHostHeader {
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
-			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-			return
-		}
 		flavor := r.Header.Get("Metadata-Flavor")
 		if flavor == "" && r.RequestURI != "/" {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+
+			glog.Errorf("Must set metadata-flavor to Google -> %+v", r.Header)
 			return
 		}
 
@@ -298,6 +290,24 @@ func instanceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprint(w, resp)
 }
+
+func instanceIdHandler(w http.ResponseWriter, r *http.Request) {
+	type mockResponse struct {
+		HostIP     string
+		InstanceID string
+	}
+
+	response, err := json.Marshal(&mockResponse{
+		HostIP: "0.0.0.0",
+		InstanceID: "mockServerId",
+	})
+	if err != nil {
+		glog.Errorf("Failed to create json response for IdHandler -> %+v", err)
+	}
+
+	_,_ = w.Write(response)
+}
+
 
 func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -422,6 +432,7 @@ func main() {
 
 	r := mux.NewRouter()
 	r.StrictSlash(true)
+	r.Handle("/computeMetadata/v1/instance/id", http.HandlerFunc(instanceIdHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods("GET")
